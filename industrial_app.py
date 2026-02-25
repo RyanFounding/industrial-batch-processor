@@ -62,14 +62,16 @@ if uploaded_files:
         for i, uploaded_file in enumerate(uploaded_files):
             # Generate a safe, random filename
             temp_pdf_path = f"temp_{uuid.uuid4().hex}.pdf"
+            gemini_file = None # Initialize empty so our 'finally' block doesn't crash if the upload fails
             
             with open(temp_pdf_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
                 
-            # Add Try/Except/Finally so one bad file doesn't crash the batch
             try:
+                # 1. Upload to Gemini Storage
                 gemini_file = client.files.upload(file=temp_pdf_path)
                 
+                # 2. Extract Data
                 response = client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=[gemini_file, "Extract the technical specifications. Leave missing specs as null."],
@@ -79,16 +81,23 @@ if uploaded_files:
                     },
                 )
                 
+                # 3. Save Data
                 data_dict = json.loads(response.text)
                 data_dict["source_file"] = uploaded_file.name
                 all_extracted_data.append(data_dict)
                 
             except Exception as e:
-                # If a file fails, warn the user but keep the loop going!
                 st.warning(f"⚠️ Failed to process {uploaded_file.name}. Error: {e}")
                 
             finally:
-                # This guarantees the temp file is deleted locally, even if the API crashed
+                # 4. CLEANUP: Delete from Google's servers
+                if gemini_file:
+                    try:
+                        client.files.delete(name=gemini_file.name)
+                    except Exception as cleanup_error:
+                        st.sidebar.error(f"Failed to delete {gemini_file.name} from API: {cleanup_error}")
+                
+                # 5. CLEANUP: Delete the local temporary file
                 if os.path.exists(temp_pdf_path):
                     os.remove(temp_pdf_path) 
             
@@ -99,11 +108,15 @@ if uploaded_files:
         st.success("Batch Extraction Complete!")
         
         # --- 5. DISPLAY AND DOWNLOAD ---
-        if all_extracted_data: # Only display if we actually extracted something
+        if all_extracted_data:
             df = pd.DataFrame(all_extracted_data)
+            
+            # Reorder columns to put source_file and model_name first
+            cols = ['source_file', 'model_name'] + [c for c in df.columns if c not in ['source_file', 'model_name']]
+            df = df[cols]
+            
             st.dataframe(df, use_container_width=True)
             
-            # Use utf-8-sig for Excel compatibility
             csv = df.to_csv(index=False).encode('utf-8-sig')
             st.download_button("⬇️ Download Batch CSV", data=csv, file_name="industrial_specs.csv", mime="text/csv")
         else:
