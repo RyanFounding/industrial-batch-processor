@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import json
 import uuid
+import time  # NEW: Imported for rate-limit cooldown
 from google import genai
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -27,8 +28,8 @@ with col_title:
 
 with col_stats:
     m1, m2 = st.columns(2)
-    m1.metric("Engine", "Gemini 2.5")
-    m2.metric("Status", "Active", delta="Ready")
+    m1.metric("Engine", "Gemini 2.5 Flash")
+    m2.metric("Tier", "Free Tier", delta="Rate-Limited")
 
 st.divider()
 
@@ -59,10 +60,10 @@ if uploaded_files:
         progress_text = "Analyzing Engineering Specs..."
         my_bar = st.progress(0, text=progress_text)
         
+        # Enumerate to track our current position in the batch
         for i, uploaded_file in enumerate(uploaded_files):
-            # Generate a safe, random filename
             temp_pdf_path = f"temp_{uuid.uuid4().hex}.pdf"
-            gemini_file = None # Initialize empty so our 'finally' block doesn't crash if the upload fails
+            gemini_file = None 
             
             with open(temp_pdf_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
@@ -105,6 +106,12 @@ if uploaded_files:
             percent_complete = int(((i + 1) / len(uploaded_files)) * 100)
             my_bar.progress(percent_complete, text=f"Processed {uploaded_file.name}...")
 
+            # NEW: Free Tier Rate Limit Protection
+            # Skip the sleep if it's the very last file in the batch
+            if i < len(uploaded_files) - 1:
+                with st.spinner(f"⏳ Cooling down to respect API limits (Processing next file shortly)..."):
+                    time.sleep(4)
+
         st.success("Batch Extraction Complete!")
         
         # --- 5. DISPLAY AND DOWNLOAD ---
@@ -118,6 +125,15 @@ if uploaded_files:
             st.dataframe(df, use_container_width=True)
             
             csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("⬇️ Download Batch CSV", data=csv, file_name="industrial_specs.csv", mime="text/csv")
+            
+            # Using primary button type to make it pop just like the invoice one
+            st.download_button(
+                label="⬇️ DOWNLOAD MASTER BATCH CSV", 
+                data=csv, 
+                file_name="industrial_specs_master.csv", 
+                mime="text/csv",
+                type="primary",
+                use_container_width=True
+            )
         else:
             st.error("No data was successfully extracted.")
