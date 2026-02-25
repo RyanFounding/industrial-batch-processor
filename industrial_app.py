@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import json
+import uuid
 from google import genai
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -59,33 +60,51 @@ if uploaded_files:
         my_bar = st.progress(0, text=progress_text)
         
         for i, uploaded_file in enumerate(uploaded_files):
-            temp_pdf_path = f"temp_{uploaded_file.name}"
+            # Generate a safe, random filename
+            temp_pdf_path = f"temp_{uuid.uuid4().hex}.pdf"
+            
             with open(temp_pdf_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
                 
-            gemini_file = client.files.upload(file=temp_pdf_path)
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[gemini_file, "Extract the technical specifications. Leave missing specs as null."],
-                config={
-                    'response_mime_type': 'application/json',
-                    'response_schema': CompressorSpecs,
-                },
-            )
+            # Add Try/Except/Finally so one bad file doesn't crash the batch
+            try:
+                gemini_file = client.files.upload(file=temp_pdf_path)
+                
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[gemini_file, "Extract the technical specifications. Leave missing specs as null."],
+                    config={
+                        'response_mime_type': 'application/json',
+                        'response_schema': CompressorSpecs,
+                    },
+                )
+                
+                data_dict = json.loads(response.text)
+                data_dict["source_file"] = uploaded_file.name
+                all_extracted_data.append(data_dict)
+                
+            except Exception as e:
+                # If a file fails, warn the user but keep the loop going!
+                st.warning(f"⚠️ Failed to process {uploaded_file.name}. Error: {e}")
+                
+            finally:
+                # This guarantees the temp file is deleted locally, even if the API crashed
+                if os.path.exists(temp_pdf_path):
+                    os.remove(temp_pdf_path) 
             
-            data_dict = json.loads(response.text)
-            data_dict["source_file"] = uploaded_file.name
-            all_extracted_data.append(data_dict)
-            os.remove(temp_pdf_path) 
-            
+            # Update progress bar
             percent_complete = int(((i + 1) / len(uploaded_files)) * 100)
             my_bar.progress(percent_complete, text=f"Processed {uploaded_file.name}...")
 
         st.success("Batch Extraction Complete!")
         
         # --- 5. DISPLAY AND DOWNLOAD ---
-        df = pd.DataFrame(all_extracted_data)
-        st.dataframe(df, use_container_width=True)
-        
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("⬇️ Download Batch CSV", data=csv, file_name="industrial_specs.csv", mime="text/csv")
+        if all_extracted_data: # Only display if we actually extracted something
+            df = pd.DataFrame(all_extracted_data)
+            st.dataframe(df, use_container_width=True)
+            
+            # Use utf-8-sig for Excel compatibility
+            csv = df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button("⬇️ Download Batch CSV", data=csv, file_name="industrial_specs.csv", mime="text/csv")
+        else:
+            st.error("No data was successfully extracted.")
