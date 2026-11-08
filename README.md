@@ -2,7 +2,7 @@
 
 Extracts technical specifications from a batch of vendor equipment datasheets (PDF) into one comparison table with standardized units.
 
-Live demo: [inkos-industrial.streamlit.app](https://inkos-industrial.streamlit.app/)
+Live demo: [insan-datasheet-batch.streamlit.app](https://insan-datasheet-batch.streamlit.app)
 
 ## Problem
 

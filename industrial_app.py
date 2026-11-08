@@ -14,7 +14,7 @@ from spec_extractor.pipeline import (
     to_csv_bytes,
 )
 
-st.set_page_config(page_title="INKOS | Industrial Batch", layout="wide")
+st.set_page_config(page_title="Insan | Datasheet Batch", layout="wide")
 st.title("Industrial Datasheet Batch Processor")
 st.write(
     "Upload compressor datasheets as PDF to build one comparison table with "
