@@ -66,7 +66,7 @@ industrial_app.py   Streamlit UI
 Requires Python 3.11 or newer.
 
 ```bash
-git clone https://github.com/RyanFounding/industrial-batch-processor.git
+git clone https://github.com/insan-sll/industrial-batch-processor.git
 cd industrial-batch-processor
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
